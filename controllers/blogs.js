@@ -2,7 +2,7 @@ const router = require('express').Router()
 const { Op } = require('sequelize')
 
 const { Blog, User } = require('../models')
-const { tokenExtractor } = require('../util/middleware')
+const { tokenExtractor, sessionCheck } = require('../util/middleware')
 
 router.get('/', async (req, res) => {
   let where = {}
@@ -36,8 +36,8 @@ router.get('/', async (req, res) => {
   res.json(blogs)
 })
 
-router.post('/', tokenExtractor, async (req, res) => {
-  const user = await User.findByPk(req.decodedToken.id)
+router.post('/', tokenExtractor, sessionCheck, async (req, res) => {
+  const user = req.user
   const blog = await Blog.create({ ...req.body, userId: user.id })
   return res.status(201).json(blog)
 })
@@ -61,18 +61,24 @@ router.get('/:id', blogFinder, async (req, res) => {
   }
 })
 
-router.delete('/:id', blogFinder, tokenExtractor, async (req, res, next) => {
-  if (req.blog) {
-    const user = await User.findByPk(req.decodedToken.id)
-    if (user.username === req.blog.user.username) await req.blog.destroy()
-    else
-      next({
-        name: 'InvalidUserError',
-        message: 'User can not delete the blog he does not own!',
-      })
+router.delete(
+  '/:id',
+  tokenExtractor,
+  sessionCheck,
+  blogFinder,
+  async (req, res, next) => {
+    if (req.blog) {
+      const user = req.user
+      if (user.username === req.blog.user.username) await req.blog.destroy()
+      else
+        next({
+          name: 'InvalidUserError',
+          message: 'User can not delete the blog he does not own!',
+        })
+    }
+    return res.status(200).end()
   }
-  return res.status(200).end()
-})
+)
 
 router.put('/:id', blogFinder, async (req, res, next) => {
   if (req.blog) {
